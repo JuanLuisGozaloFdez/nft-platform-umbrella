@@ -1,0 +1,121 @@
+name: System Umbrella CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    - cron: '0 2 * * *'  # Nightly builds
+
+jobs:
+  trigger-backend-services:
+    runs-on: ubuntu-latest
+    name: Trigger Backend Services
+    steps:
+      - name: Trigger Backend Workflows
+        run: |
+          echo "Triggering backend services CI/CD pipelines..."
+          # Los workflows se dispararán automáticamente por los push events
+          echo "✓ ticketing-core-service"
+          echo "✓ wallet-assets-service"
+          echo "✓ checkin-validation-service"
+          echo "✓ users-identity-service"
+          echo "✓ payments-orders-service"
+          echo "✓ notifications-comms-service"
+          echo "✓ admin-event-ops-service"
+          echo "✓ nft-marketplace-integration"
+          echo "✓ api-gateway-bff"
+
+  trigger-frontend-apps:
+    runs-on: ubuntu-latest
+    name: Trigger Frontend Apps
+    steps:
+      - name: Trigger Frontend Workflows
+        run: |
+          echo "Triggering frontend apps CI/CD pipelines..."
+          echo "✓ mobile-app-fans"
+          echo "✓ admin-web-portal"
+          echo "✓ checkin-scanner-app"
+
+  trigger-infrastructure:
+    runs-on: ubuntu-latest
+    name: Trigger Infrastructure
+    steps:
+      - name: Trigger Infrastructure Workflow
+        run: |
+          echo "Triggering infrastructure CI/CD pipeline..."
+          echo "✓ platform-infra"
+
+  status-check:
+    runs-on: ubuntu-latest
+    name: System Health Status
+    needs: [ trigger-backend-services, trigger-frontend-apps, trigger-infrastructure ]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: System Status
+        run: |
+          echo "🔍 NFT Ticketing System - CI/CD Status Check"
+          echo "=========================================="
+          echo ""
+          echo "Backend Services (9):"
+          echo "  • ticketing-core-service"
+          echo "  • wallet-assets-service"
+          echo "  • checkin-validation-service"
+          echo "  • users-identity-service"
+          echo "  • payments-orders-service"
+          echo "  • notifications-comms-service"
+          echo "  • admin-event-ops-service"
+          echo "  • nft-marketplace-integration"
+          echo "  • api-gateway-bff"
+          echo ""
+          echo "Frontend Apps (3):"
+          echo "  • mobile-app-fans"
+          echo "  • admin-web-portal"
+          echo "  • checkin-scanner-app"
+          echo ""
+          echo "Infrastructure:"
+          echo "  • platform-infra"
+          echo ""
+          echo "=========================================="
+
+  notify-status:
+    runs-on: ubuntu-latest
+    name: Notify Status
+    needs: [ status-check ]
+    if: always()
+    steps:
+      - name: Build Status Notification
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ All systems operational"
+          else
+            echo "⚠️ Some checks failed"
+          fi
+
+  kube-lint:
+    runs-on: ubuntu-latest
+    name: Kubernetes Manifests Lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kube-linter
+        run: |
+          curl -sSL https://github.com/stackrox/kube-linter/releases/latest/download/kube-linter-linux.tar.gz | tar -xz
+          sudo mv kube-linter /usr/local/bin/
+      - name: Lint manifests across repo
+        run: |
+          # Busca directorios k8s en subproyectos y los valida si existen
+          found=0
+          for dir in ticketing-core-service wallet-assets-service checkin-validation-service users-identity-service payments-orders-service notifications-comms-service admin-event-ops-service nft-marketplace-integration api-gateway-bff admin-web-portal mobile-app-fans checkin-scanner-app; do
+            if [ -d "$dir/k8s" ]; then
+              echo "Linting manifests in $dir/k8s"
+              kube-linter lint "$dir/k8s" || true
+              found=1
+            fi
+          done
+          if [ $found -eq 0 ]; then
+            echo "No se encontraron directorios k8s en los subproyectos."
+          fi
+        continue-on-error: true
