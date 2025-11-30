@@ -1,0 +1,406 @@
+Contexto Sistema Ticketing
+eres un arquitecto de soluciones. Tienes sobre la mesa una propuesta de idea para crear un sistema de tickets para eventos. Los tickets deben ser emitidos en formato digital (tipo NFT coleccionable) para que los aficionados lo guarden en una wallet dentro de la APP que se debe crear tambien. 
+El número de tickets es elevado y la validación de los tickets puede ser masiva en el momento del evento. 
+Los tickets que los aficionados tienen pueden ser "vendidos" a una tercera persona que pasará a ser el receptor del ticket. 
+Lo primero que debes determinar es cuantos diferentes elementos debe tener la solución y, por tanto, cuantos diferentes repositorios de código deben crearse para que los desarrolladores se pongan a trabajar.
+La solución completa debería dividirse en unos 8–12 componentes/repositorios separados, según el nivel de granularidad y los equipos disponibles.[1][2]
+
+## Visión global de dominios
+
+A alto nivel hay cuatro dominios claros que conviene separar en repositorios distintos:[3][1]
+- Emisión y ciclo de vida del ticket (incluyendo NFT/smart contracts).  
+- Experiencia del usuario (APP de fans y, si aplica, web).  
+- Operativa del organizador (backoffice, administración de eventos y validación masiva).  
+- Infraestructura transversal (identidad, pagos, notificaciones, observabilidad).  
+
+## Repositorios backend recomendados
+
+1. **Ticketing Core / Events & Inventory**  
+   - Modelado de eventos, sesiones, tipos de entradas, cupos, precios, reglas de venta, políticas de reventa.[2][3]
+   - API para reservar, comprar, liberar y transferir tickets a otros usuarios (sin entrar aún en la parte blockchain).[4][1]
+
+2. **NFT & Blockchain Service**  
+   - Smart contracts para minting/burning/transfer de tickets NFT y royalties en reventa.[5][3]
+   - Servicio off-chain que orquesta la acuñación, mapea IDs internos ↔ IDs de NFT y gestiona fallback si la red blockchain se degrada.[1][3]
+
+3. **Wallet & Assets Service**  
+   - Gestión de “wallet” interna de la APP (custodial o semi-custodial) y vinculación con wallets externas si se permite.[3][5]
+   - Exposición de listado de tickets del usuario, metadatos coleccionables, imágenes, etc. (apto para caché fuerte).[2][3]
+
+4. **Check-in & Validation Service**  
+   - Generación y verificación de códigos (QR/otros) con control de uso único, scan limits y lock tras primera validación.[6][7]
+   - Diseño para validación masiva y baja latencia: colas de mensajes, modo offline/online, replicación en edge y mecanismos anti-rejuego.[7][6]
+
+5. **Users & Identity (Auth)**  
+   - Registro/login, gestión de perfiles y vinculación con wallet del usuario.[4][2]
+   - APIs OAuth/OIDC para que APP, backoffice y escáneres validen identidades y permisos (ej. rol de “staff de acceso”).[7][2]
+
+6. **Payments & Orders**  
+   - Integración con pasarelas de pago (tarjeta, cripto opcional), estados de pedido y conciliación.[2][3]
+   - Lógica de “reserva → pago → emisión NFT + ticket” y de comisiones/royalties en reventa.[5][3]
+
+7. **Notifications & Comms**  
+   - Envío de emails/SMS/push con links de descarga, actualizaciones de evento, cambios de hora, etc.[8][2]
+   - Webhooks/event bus para disparar notificaciones en cambios críticos (compra confirmada, transferencia aceptada, ticket validado).[9][8]
+
+8. **Admin & Event Ops API**  
+   - Funciones de organizador: crear eventos, configurar aforos, precios, ventanas de venta, reglas de reventa, informes de asistencia.[1][2]
+   - Gestión de roles de staff y dispositivos de validación (alta/baja de escáneres móviles, permisos por zona).[9][7]
+
+## Repositorios frontend / apps
+
+9. **Mobile App Fans (iOS/Android)**  
+   - Wallet de tickets/NFT, onboarding, compra/venta P2P y acceso rápido a QR para entrada.[8][3]
+   - Integración con notificaciones push y, si interesa, exportar pase a Apple/Google Wallet como alternativa.[10][8]
+
+10. **Admin Web App**  
+   - Panel de control para organizadores y soporte: configuración de eventos, dashboards de ventas/asistencia, gestión de incidencias.[1][2]
+
+11. **Check-in App / Scanner**  
+   - Aplicación ligera (mobile/web) para el personal de puerta, optimizada para escanear miles de tickets con feedback inmediato.[6][7]
+
+## Infraestructura compartida (opcional separado)
+
+12. **DevOps / Infra as Code (mono-repo de infraestructura)**  
+   - Scripts IaC (Terraform, Helm, etc.), configuración de CI/CD, logging, métricas, tracing y observabilidad para todos los servicios.[4][7]
+
+Si se busca menos fragmentación para un equipo pequeño, varios de estos componentes pueden agruparse (por ejemplo, Ticketing Core + Payments + NFT en un mismo backend y Wallet integrado en la app móvil). Para un diseño “enterprise” orientado a escalabilidad y equipos independientes, la referencia serían 10–12 repositorios como los listados.
+
+[1](https://dev.to/mbogan/build-a-web3-ticketing-system-with-nfts-and-disrupt-ticketmaster-4g90)
+[2](https://passkit.com/blog/electronic-ticketing-system/)
+[3](https://www.leewayhertz.com/how-nft-ticketing-works/)
+[4](https://www.reddit.com/r/nextjs/comments/1alps56/built_a_ticketing_app_with_microservices/)
+[5](https://www.meegle.com/en_us/topics/nft/nft-ticketing-solutions)
+[6](https://www.qrcodechimp.com/qr-codes-for-event-tickets-with-validation/)
+[7](https://www.linkedin.com/pulse/how-build-bulletproof-ticket-verification-system-tickifyio-xephc)
+[8](https://www.badge.dev/blog/mobile-ticketing-event-check-in)
+[9](https://godreamcast.com/blog/solution/event-registration/qr-code-best-practices/)
+[10](https://theeventscalendar.com/knowledgebase/event-tickets-wallet-plus/)
+
+
+
+
+Como ayuda, el diagrama de componentes (en plantuml) sería algo como el siguiente: 
+La arquitectura pasa a consumir un componente blockchain ya existente, tratado como sistema externo especializado que expone capacidades de mint, compra/venta y transferencia de NFTs.
+
+```plantuml
+@startuml
+title Sistema de Ticketing NFT - Integrando nft-marketplace-smart-contracts
+
+'=== Actores externos ===
+actor "Fan / Comprador" as Fan
+actor "Organizador de Evento" as Organizer
+actor "Staff de Acceso" as Staff
+actor "Soporte / Backoffice" as Support
+
+'=== Interfaces externas (API públicas) ===
+interface "Public Ticketing API" as PubTicketAPI
+interface "Admin API" as AdminAPI
+interface "Check-in API" as CheckinAPI
+interface "Auth API" as AuthAPI
+interface "Webhook/Events API" as WebhookAPI
+
+'=== Frontends ===
+package "Frontends" {
+  [Mobile App Fans] as MobileApp
+  [Admin Web App] as AdminWeb
+  [Check-in App / Scanner] as ScannerApp
+}
+
+'=== Backends ===
+package "APIs Backend" {
+  [API Gateway / BFF] as APIGW
+
+  [Ticketing Core\nEvents & Inventory] as TicketCore
+  [Wallet & Assets Service] as WalletSvc
+  [Check-in & Validation Service] as CheckinSvc
+  [Users & Identity Service] as AuthSvc
+  [Payments & Orders Service] as PaymentSvc
+  [Notifications & Comms Service] as NotifSvc
+  [Admin & Event Ops API] as AdminSvc
+
+  ' Nuevo servicio de integración con el marketplace NFT existente
+  [NFT Marketplace Adapter\n(nft-marketplace-integration)] as NFTAdapter
+}
+
+'=== Infra & Sistemas Externos ===
+package "Infra & Externos" {
+  ' Repositorio existente de contratos Solidity / marketplace
+  component "nft-marketplace-smart-contracts\n(Solidity Smart Contracts)" as NFTMarketplace #LightBlue
+
+  [Payment Gateway] as PayGateway
+  [Email/SMS/Push Providers] as CommProv
+  [Monitoring & Logging] as Observability
+  [Identity Provider Externo\n(Social Login/OIDC)] as ExternalIdP
+  [Plataformas de Venta Terceras] as ExternalSales
+}
+
+'=== Relaciones Actores -> Frontends ===
+Fan --> MobileApp
+Fan --> ExternalSales
+Organizer --> AdminWeb
+Support --> AdminWeb
+Staff --> ScannerApp
+
+'=== Frontends -> Interfaces (APIs públicas) ===
+MobileApp -- PubTicketAPI
+MobileApp -- AuthAPI
+AdminWeb -- AdminAPI
+AdminWeb -- AuthAPI
+ScannerApp -- CheckinAPI
+ScannerApp -- AuthAPI
+
+'=== Interfaces -> API Gateway / Auth ===
+PubTicketAPI -- APIGW
+AdminAPI -- APIGW
+CheckinAPI -- APIGW
+AuthAPI -- AuthSvc
+WebhookAPI -- NotifSvc
+
+'=== API Gateway -> Servicios internos ===
+APIGW --> TicketCore
+APIGW --> WalletSvc
+APIGW --> CheckinSvc
+APIGW --> AuthSvc
+APIGW --> PaymentSvc
+APIGW --> NotifSvc
+APIGW --> AdminSvc
+APIGW --> NFTAdapter
+
+'=== Relaciones internas backend (sin lógica on-chain propia) ===
+TicketCore --> PaymentSvc : crear/gestionar órdenes
+PaymentSvc --> NFTAdapter : solicitar emisión/transfer de NFT ticket
+NFTAdapter --> WalletSvc : asociar NFT on-chain con identidad/wallet app
+TicketCore --> WalletSvc : tickets del usuario (vista unificada)
+TicketCore --> CheckinSvc : estado/validez de ticket
+ScannerApp --> CheckinSvc : validar ticket (vía CheckinAPI)
+
+'=== Identidad ===
+AuthSvc --> ExternalIdP : federación/OIDC
+
+'=== Notificaciones / Webhooks ===
+TicketCore --> NotifSvc : compra/cancelación
+PaymentSvc --> NotifSvc : resultado de pago
+CheckinSvc --> NotifSvc : ticket validado / incidencias
+NotifSvc --> CommProv : emails/SMS/push
+NotifSvc --> WebhookAPI
+
+'=== Admin ===
+AdminSvc --> TicketCore : CRUD eventos, precios, aforos
+AdminSvc --> CheckinSvc : configuración puertas/dispositivos
+
+'=== Integraciones externas de venta ===
+ExternalSales --> PubTicketAPI : ventas externas
+TicketCore --> ExternalSales : sincronización inventario (opcional)
+
+'=== Blockchain / Pagos ===
+' El ticketing no habla directamente con la red, sino con el marketplace ya existente
+NFTAdapter --> NFTMarketplace : mint/list/transfer/buy/sell NFTs
+PaymentSvc --> PayGateway : cobros
+
+'=== Observabilidad transversal ===
+APIGW --> Observability
+TicketCore --> Observability
+WalletSvc --> Observability
+CheckinSvc --> Observability
+AuthSvc --> Observability
+PaymentSvc --> Observability
+NotifSvc --> Observability
+AdminSvc --> Observability
+NFTAdapter --> Observability
+
+@enduml
+```
+Se asume siempre que la lógica NFT on-chain vive en el repositorio `nft-marketplace-smart-contracts` y que el sistema de ticketing solo interactúa con ella a través del componente `NFT Marketplace Adapter` (nuevo repositorio de integración).
+
+y, la estructura sugerida de repositorios para todos estos componentes con su estructura de carpetas internas, sería algo como esto a continuación, con una propuesta de estructura interna por repo, pensada para TypeScript/Node + apps móviles/web, pero adaptable. Está organizada por componentes y submódulos (carpetas lógicas).
+
+***
+
+## `ticketing-core-service`
+
+- `/docs`  
+- `/src`  
+  - `/api` (controladores REST/GraphQL)  
+  - `/application`  
+    - `/commands` (casos de uso: `CreateEvent`, `ReserveTickets`, `TransferTicket`…)  
+    - `/queries` (lecturas optimizadas: `GetEventDetail`, `ListUserTickets`…)  
+  - `/domain`  
+    - `/events` (agregado Evento, Sesión, Aforo)  
+    - `/tickets` (Ticket, tipos de ticket, políticas de reventa)  
+    - `/orders` (órdenes internas de ticketing, estados)  
+    - `/services` (dominio: pricing, reglas de disponibilidad)  
+  - `/infrastructure`  
+    - `/persistence` (ORM/repositorios)  
+    - `/messaging` (event bus, publicación de eventos de dominio)  
+    - `/config`  
+- `/tests`  
+
+***
+
+## `wallet-assets-service`
+
+- `/src`  
+  - `/api`  
+  - `/application` (gestión de cartera, sincronización on-chain/off-chain)  
+  - `/domain`  
+    - `/wallet` (wallet custodiada, vinculaciones externas)  
+    - `/assets` (modelo de NFT/ticket visible en la app)  
+  - `/infrastructure`  
+    - `/persistence`  
+    - `/clients/nft-marketplace` (client a `nft-marketplace-integration` o directamente gRPC/REST)  
+
+***
+
+## `checkin-validation-service`
+
+- `/src`  
+  - `/api` (endpoints para scanner, websockets si aplica)  
+  - `/application`  
+    - `/commands` (ValidateTicket, InvalidateTicket, BulkOpenGate…)  
+    - `/queries` (status de puerta, colas, estadísticas)  
+  - `/domain`  
+    - `/checkin` (modelo de validación, estados de ticket en acceso)  
+    - `/gate` (puertas, dispositivos, zonas)  
+  - `/infrastructure`  
+    - `/persistence`  
+    - `/messaging` (consumo de eventos de Ticketing Core)  
+    - `/caching` (low-latency cache, in-memory/redis)  
+
+***
+
+## `users-identity-service`
+
+- `/src`  
+  - `/api` (OAuth/OIDC endpoints, gestión de sesiones, tokens)  
+  - `/domain`  
+    - `/users` (perfil, roles, estados)  
+    - `/auth` (credenciales, MFA, sesiones)  
+  - `/application` (flujos de login/registro, federación IdP)  
+  - `/infrastructure`  
+    - `/persistence`  
+    - `/idp` (integraciones con IdP externos)  
+
+***
+
+## `payments-orders-service`
+
+- `/src`  
+  - `/api`  
+  - `/application`  
+    - `/commands` (CreatePaymentIntent, CapturePayment…)  
+    - `/sagas` (orquestación pago ↔ emisión ticket/NFT)  
+  - `/domain`  
+    - `/payments` (intentos, transacciones, estados)  
+    - `/billing` (comisiones, impuestos, royalties de reventa)  
+  - `/infrastructure`  
+    - `/persistence`  
+    - `/gateways` (Stripe, Redsys, etc.)  
+
+***
+
+## `notifications-comms-service`
+
+- `/src`  
+  - `/api` (webhooks management, pruebas de envío)  
+  - `/application`  
+    - `/handlers` (reaccionar a eventos: compra confirmada, ticket validado…)  
+  - `/domain`  
+    - `/templates`  
+    - `/channels` (email, SMS, push, webhook)  
+  - `/infrastructure`  
+    - `/providers` (Sendgrid, Twilio, FCM, etc.)  
+
+***
+
+## `admin-event-ops-service`
+
+- `/src`  
+  - `/api` (endpoints solo admin)  
+  - `/application`  
+    - `/commands` (CreateEventConfig, UpdatePricing, RegisterDevice…)  
+  - `/domain`  
+    - `/events-config`  
+    - `/operations` (permisos staff, zonas, reports)  
+  - `/infrastructure`  
+    - `/persistence`  
+
+***
+
+## `nft-marketplace-integration`
+
+- `/src`  
+  - `/api` (facade interno para otros servicios)  
+  - `/application`  
+    - `/commands` (MintTicketNFT, TransferNFTToUser, ListForSale…)  
+  - `/domain`  
+    - `/nft-ticket` (modelo lógico de NFT ticket en el contexto de ticketing)  
+  - `/infrastructure`  
+    - `/clients`  
+      - `/smart-contracts` (wrapper web3/ethers hacia `nft-marketplace-smart-contracts`)  
+    - `/mappers` (mapping IDs on-chain ↔ IDs internos)  
+
+***
+
+## `api-gateway-bff`
+
+- `/src`  
+  - `/routes/public` (API para app fans)  
+  - `/routes/admin`  
+  - `/routes/checkin`  
+  - `/composition` (agregadores de llamadas a múltiples servicios)  
+  - `/auth` (validación de tokens con `users-identity-service`)  
+  - `/middlewares` (rate limit, tracing, logging)  
+
+***
+
+## `nft-marketplace-smart-contracts` (existente)
+
+- `/contracts` (Solidity)  
+- `/scripts` (deploy, migrate)  
+- `/test`  
+- `/deployment` (config de redes)  
+- `/docs`  
+
+***
+
+## `mobile-app-fans`
+
+- `/app`  
+  - `/screens` (Home, EventDetail, TicketDetail, Wallet, Marketplace…)  
+  - `/navigation`  
+  - `/components`  
+  - `/state` (Redux/Zustand/etc.)  
+  - `/services` (API client, auth, analytics)  
+
+***
+
+## `admin-web-portal`
+
+- `/src`  
+  - `/pages` (Events, Pricing, Reports, Devices, Support…)  
+  - `/components`  
+  - `/hooks`  
+  - `/services` (clients a admin API, auth)  
+
+***
+
+## `checkin-scanner-app`
+
+- `/src`  
+  - `/screens` (Login, Scanner, Result, OfflineQueue…)  
+  - `/components`  
+  - `/services` (check-in API client, sync offline)  
+
+***
+
+## `platform-infra`
+
+- `/terraform` o `/pulumi` (por entornos: `prod/`, `staging/`, `dev/`)  
+- `/k8s`  
+  - `/base`  
+  - `/overlays/prod|staging|dev`  
+- `/ci-cd` (pipelines)  
+- `/observability` (Dashboards, alertas, reglas)  
+
+

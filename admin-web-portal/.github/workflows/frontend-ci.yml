@@ -1,0 +1,127 @@
+name: Frontend CI/CD
+
+# ---
+# KUBERNETES MANIFEST VALIDATION (kube-linter)
+# Este workflow incluye un job (kube-lint) que ejecuta kube-linter sobre los manifiestos en el directorio k8s/ si existen.
+# Si añades manifiestos (archivos YAML) para despliegue, colócalos en k8s/ y serán validados automáticamente.
+# Si no hay manifiestos, el job se saltará la validación.
+# Para usar conftest en vez de kube-linter, reemplaza el paso correspondiente.
+# ---
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'package.json'
+      - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run ESLint
+        run: npm run lint --if-present
+        continue-on-error: true
+      
+      - name: Run Prettier check
+        run: npm run format:check --if-present
+        continue-on-error: true
+
+  kube-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kube-linter
+        run: |
+          curl -sSL https://github.com/stackrox/kube-linter/releases/latest/download/kube-linter-linux.tar.gz | tar -xz
+          sudo mv kube-linter /usr/local/bin/
+      - name: Run kube-linter on manifests
+        run: |
+          if compgen -G "k8s/*.yml" > /dev/null || compgen -G "k8s/*.yaml" > /dev/null; then
+            kube-linter lint k8s/
+          else
+            echo "No se encontraron manifiestos Kubernetes en k8s/. Saltando kube-linter."
+          fi
+        continue-on-error: true
+
+  build:
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build
+        run: npm run build
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build
+          path: dist/
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run tests
+        run: npm test -- --coverage
+        continue-on-error: true
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        continue-on-error: true
+
+  deploy-preview:
+    runs-on: ubuntu-latest
+    needs: [ build, test ]
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download build
+        uses: actions/download-artifact@v3
+        with:
+          name: build
+      
+      - name: Deploy to preview
+        run: echo "Deploy preview to staging"
+        continue-on-error: true
