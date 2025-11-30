@@ -1,0 +1,24 @@
+[submodule "services/api-gateway-bff"]
+	path = services/api-gateway-bff
+	url = git@github.com:JuanLuisGozaloFdez/api-gateway-bff.git
+[submodule "services/ticketing-core"]
+	path = services/ticketing-core
+	url = git@github.com:JuanLuisGozaloFdez/ticketing-core-service.git
+[submodule "services/users-identity"]
+	path = services/users-identity
+	url = git@github.com:JuanLuisGozaloFdez/users-identity-service.git
+[submodule "services/payments-orders"]
+	path = services/payments-orders
+	url = git@github.com:JuanLuisGozaloFdez/payments-orders-service.git
+[submodule "services/wallet-assets"]
+	path = services/wallet-assets
+	url = git@github.com:JuanLuisGozaloFdez/wallet-assets-service.git
+[submodule "services/notifications"]
+	path = services/notifications
+	url = git@github.com:JuanLuisGozaloFdez/notifications-comms-service.git
+[submodule "services/checkin-validation"]
+	path = services/checkin-validation
+	url = git@github.com:JuanLuisGozaloFdez/checkin-validation-service.git
+[submodule "services/admin-event-ops"]
+	path = services/admin-event-ops
+	url = git@github.com:JuanLuisGozaloFdez/admin-event-ops-service.git
