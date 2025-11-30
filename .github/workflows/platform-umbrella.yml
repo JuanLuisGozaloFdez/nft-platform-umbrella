@@ -391,7 +391,7 @@ jobs:
     needs: push-images
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
-      name: production
+      name: "production"
       url: https://ticketing.example.com
     
     steps:
