@@ -1,0 +1,63 @@
+name: Admin Web Portal CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'admin-web-portal/**'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'admin-web-portal/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-web-portal
+    env:
+      VITE_API_URL: ${{ secrets.VITE_API_URL }}
+      VITE_ADMIN_SECRET: ${{ secrets.VITE_ADMIN_SECRET }}
+      VITE_CHART_API_KEY: ${{ secrets.VITE_CHART_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v3
+        with:
+          name: admin-web-dist
+          path: admin-web-portal/dist/
+
+  lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-web-portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint --if-present
+
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-web-portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test -- --coverage
