@@ -1,0 +1,122 @@
+name: Reports Scheduler
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # Daily at 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  regenerate-reports:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout umbrella repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node and Python
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Install GitHub CLI and jq
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+          type -p curl >/dev/null || sudo apt-get install curl -y
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt-get update -y
+          sudo apt-get install -y gh
+      
+      - name: Auth GitHub CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh auth status || gh auth login --with-token <<< "$GH_TOKEN"
+
+      - name: Run workflow status collection script
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x ./scripts/collect_workflow_status.sh
+          ./scripts/collect_workflow_status.sh
+
+      - name: Append aggregated summary to WORKFLOWS_VERIFICATION.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+import json, subprocess, datetime
+repos = [
+  "JuanLuisGozaloFdez/ticketing-core-service",
+  "JuanLuisGozaloFdez/wallet-assets-service",
+  "JuanLuisGozaloFdez/checkin-validation-service",
+  "JuanLuisGozaloFdez/users-identity-service",
+  "JuanLuisGozaloFdez/payments-orders-service",
+  "JuanLuisGozaloFdez/notifications-comms-service",
+  "JuanLuisGozaloFdez/admin-event-ops-service",
+  "JuanLuisGozaloFdez/nft-marketplace-integration",
+  "JuanLuisGozaloFdez/api-gateway-bff",
+  "JuanLuisGozaloFdez/admin-web-portal",
+  "JuanLuisGozaloFdez/mobile-app-fans",
+  "JuanLuisGozaloFdez/checkin-scanner-app",
+  "JuanLuisGozaloFdez/nft-platform-umbrella",
+  "JuanLuisGozaloFdez/platform-infra",
+  "JuanLuisGozaloFdez/nft-marketplace-backend-api",
+  "JuanLuisGozaloFdez/nft-marketplace-smart-contracts",
+]
+rows=[]
+ok=0; fail=0; none=0
+for repo in repos:
+  try:
+    out = subprocess.check_output(["gh","run","list","-R",repo,"--limit","1","--json","status,workflowName,headBranch,htmlUrl"], text=True)
+    data = json.loads(out)
+    if not data:
+      rows.append((repo,"-","-","-"))
+      none+=1
+      continue
+    r = data[0]
+    status = r.get("status","-")
+    wf = r.get("workflowName","-")
+    url = r.get("htmlUrl","-")
+    rows.append((repo, status, wf, url))
+    if status=="completed":
+      ok+=1
+    elif status in ("failed","cancelled"):
+      fail+=1
+    else:
+      none+=1
+  except Exception:
+    rows.append((repo,"-","-","-"))
+    none+=1
+
+stamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+block = []
+block.append(f"## 📊 Workflows Summary ({stamp})")
+block.append("")
+block.append(f"- Success: {ok} | Fail/Cancelled: {fail} | Unknown/Pending: {none}")
+block.append("")
+block.append("| Repository | Status | Workflow | URL |")
+block.append("|------------|--------|----------|-----|")
+for repo,status,wf,url in rows:
+  block.append(f"| {repo} | {status} | {wf} | {url} |")
+block.append("")
+path="WORKFLOWS_VERIFICATION.md"
+with open(path,"a") as f:
+  f.write("\n"+"\n".join(block)+"\n")
+print("Updated",path)
+PY
+
+      - name: Commit and push reports
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add WORKFLOWS_TEST_REPORT.md WORKFLOWS_VERIFICATION.md || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(reports): daily regeneration of workflow status and summaries"
+            git push
+          else
+            echo "No changes to commit"
+          fi

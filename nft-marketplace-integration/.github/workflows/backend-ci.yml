@@ -37,6 +37,25 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  db-postgres-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+      - name: Postgres connection smoke test
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL no definido. Saltando verificación de Postgres." && exit 0
+          fi
+          echo "Probar conexión con psql (solo metadata)"
+          PSQL_URI="$DATABASE_URL"
+          psql "$PSQL_URI" -c 'SELECT 1;' || (echo "Fallo conexión a Postgres" && exit 1)
+        continue-on-error: true
   lint:
     runs-on: ubuntu-latest
     steps:
