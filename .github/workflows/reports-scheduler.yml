@@ -18,6 +18,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
       
       - name: Install GitHub CLI and jq
         run: |
@@ -34,86 +38,80 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh auth status || gh auth login --with-token <<< "$GH_TOKEN"
+          gh auth status || echo "$GH_TOKEN" | gh auth login --with-token
 
       - name: Run workflow status collection script
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          chmod +x ./scripts/collect_workflow_status.sh
-          ./scripts/collect_workflow_status.sh
+          if [ -f ./scripts/collect_workflow_status.sh ]; then
+            chmod +x ./scripts/collect_workflow_status.sh
+            ./scripts/collect_workflow_status.sh
+          else
+            echo "scripts/collect_workflow_status.sh not found; skipping this step"
+          fi
 
       - name: Append aggregated summary to WORKFLOWS_VERIFICATION.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 - <<'PY'
-import json, subprocess, datetime
-repos = [
-  "JuanLuisGozaloFdez/ticketing-core-service",
-  "JuanLuisGozaloFdez/wallet-assets-service",
-  "JuanLuisGozaloFdez/checkin-validation-service",
-  "JuanLuisGozaloFdez/users-identity-service",
-  "JuanLuisGozaloFdez/payments-orders-service",
-  "JuanLuisGozaloFdez/notifications-comms-service",
-  "JuanLuisGozaloFdez/admin-event-ops-service",
-  "JuanLuisGozaloFdez/nft-marketplace-integration",
-  "JuanLuisGozaloFdez/api-gateway-bff",
-  "JuanLuisGozaloFdez/admin-web-portal",
-  "JuanLuisGozaloFdez/mobile-app-fans",
-  "JuanLuisGozaloFdez/checkin-scanner-app",
-  "JuanLuisGozaloFdez/nft-platform-umbrella",
-  "JuanLuisGozaloFdez/platform-infra",
-  "JuanLuisGozaloFdez/nft-marketplace-backend-api",
-  "JuanLuisGozaloFdez/nft-marketplace-smart-contracts",
-]
-rows=[]
-ok=0; fail=0; none=0
-for repo in repos:
-  try:
-    out = subprocess.check_output(["gh","run","list","-R",repo,"--limit","1","--json","status,workflowName,headBranch,htmlUrl"], text=True)
-    data = json.loads(out)
-    if not data:
-      rows.append((repo,"-","-","-"))
-      none+=1
-      continue
-    r = data[0]
-    status = r.get("status","-")
-    wf = r.get("workflowName","-")
-    url = r.get("htmlUrl","-")
-    rows.append((repo, status, wf, url))
-    if status=="completed":
-      ok+=1
-    elif status in ("failed","cancelled"):
-      fail+=1
-    else:
-      none+=1
-  except Exception:
-    rows.append((repo,"-","-","-"))
-    none+=1
-
-stamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-block = []
-block.append(f"## 📊 Workflows Summary ({stamp})")
-block.append("")
-block.append(f"- Success: {ok} | Fail/Cancelled: {fail} | Unknown/Pending: {none}")
-block.append("")
-block.append("| Repository | Status | Workflow | URL |")
-block.append("|------------|--------|----------|-----|")
-for repo,status,wf,url in rows:
-  block.append(f"| {repo} | {status} | {wf} | {url} |")
-block.append("")
-path="WORKFLOWS_VERIFICATION.md"
-with open(path,"a") as f:
-  f.write("\n"+"\n".join(block)+"\n")
-print("Updated",path)
-PY
+          set -e
+          repos=(
+            "JuanLuisGozaloFdez/ticketing-core-service"
+            "JuanLuisGozaloFdez/wallet-assets-service"
+            "JuanLuisGozaloFdez/checkin-validation-service"
+            "JuanLuisGozaloFdez/users-identity-service"
+            "JuanLuisGozaloFdez/payments-orders-service"
+            "JuanLuisGozaloFdez/notifications-comms-service"
+            "JuanLuisGozaloFdez/admin-event-ops-service"
+            "JuanLuisGozaloFdez/nft-marketplace-integration"
+            "JuanLuisGozaloFdez/api-gateway-bff"
+            "JuanLuisGozaloFdez/admin-web-portal"
+            "JuanLuisGozaloFdez/mobile-app-fans"
+            "JuanLuisGozaloFdez/checkin-scanner-app"
+            "JuanLuisGozaloFdez/nft-platform-umbrella"
+            "JuanLuisGozaloFdez/platform-infra"
+            "JuanLuisGozaloFdez/nft-marketplace-backend-api"
+            "JuanLuisGozaloFdez/nft-marketplace-smart-contracts"
+          )
+          ok=0; fail=0; none=0
+          stamp=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          tmp=$(mktemp)
+          {
+            echo "## 📊 Workflows Summary (${stamp})"
+            echo
+            echo "| Repository | Status | Workflow | URL |"
+            echo "|------------|--------|----------|-----|"
+          } > "$tmp"
+          for repo in "${repos[@]}"; do
+            out=$(gh run list -R "$repo" --limit 1 --json status,workflowName,headBranch,htmlUrl 2>/dev/null || echo "[]")
+            status=$(echo "$out" | jq -r '.[0].status // "-"')
+            wf=$(echo "$out" | jq -r '.[0].workflowName // "-"')
+            url=$(echo "$out" | jq -r '.[0].htmlUrl // "-"')
+            echo "| $repo | $status | $wf | $url |" >> "$tmp"
+            if [ "$status" = "completed" ]; then
+              ok=$((ok+1))
+            elif [ "$status" = "failed" ] || [ "$status" = "cancelled" ]; then
+              fail=$((fail+1))
+            else
+              none=$((none+1))
+            fi
+          done
+          {
+            echo
+            echo "- Success: $ok | Fail/Cancelled: $fail | Unknown/Pending: $none"
+            echo
+          } >> "$tmp"
+          echo >> "$tmp"
+          cat "$tmp" >> WORKFLOWS_VERIFICATION.md
+          echo "Updated WORKFLOWS_VERIFICATION.md"
 
       - name: Commit and push reports
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add WORKFLOWS_TEST_REPORT.md WORKFLOWS_VERIFICATION.md || true
+          # Add only files that exist and have changes
+          [ -f WORKFLOWS_VERIFICATION.md ] && git add WORKFLOWS_VERIFICATION.md || true
           if ! git diff --cached --quiet; then
             git commit -m "chore(reports): daily regeneration of workflow status and summaries"
             git push

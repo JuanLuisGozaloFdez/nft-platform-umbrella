@@ -150,6 +150,36 @@ Cada servicio tiene su propio workflow en `.github/workflows/backend-ci.yml`:
 
 **Total**: 14 workflows operacionales (8 backend + 3 frontend + 2 infra + 1 umbrella)
 
+### Manual workflow dispatch (umbrella)
+
+Para lanzar manualmente el workflow del umbrella `reports-scheduler.yml` y verificar su estado:
+
+```bash
+# Definir repo y workflow
+REPO="JuanLuisGozaloFdez/nft-platform-umbrella"
+WF="reports-scheduler.yml"
+
+# Autenticación con GitHub CLI (si no está configurado)
+echo "$GH_TOKEN" | gh auth login --with-token
+
+# Disparar el workflow en la rama main
+gh workflow run "$WF" -R "$REPO" --ref main
+
+# Esperar unos segundos y ver el último run
+sleep 5
+gh run list -R "$REPO" --workflow "$WF" --limit 1 --json databaseId,htmlUrl,status,conclusion \
+  | jq -r '.[0] | "URL: " + (.htmlUrl // "-") + "\nStatus: " + (.status // "-") + "\nConclusion: " + (.conclusion // "-")'
+
+# Opcional: ver logs del último run
+RUN_ID=$(gh run list -R "$REPO" --workflow "$WF" --limit 1 --json databaseId | jq -r '.[0].databaseId')
+gh run watch -R "$REPO" "$RUN_ID" --interval 5
+gh run view -R "$REPO" "$RUN_ID" --log
+```
+
+Notas:
+- Asegúrate de tener `jq` instalado (`sudo apt-get install -y jq`).
+- Si tu workflow tiene otro nombre/archivo, ajusta `WF` según corresponda.
+
 ## 📁 Estructura de Carpetas
 
 ```

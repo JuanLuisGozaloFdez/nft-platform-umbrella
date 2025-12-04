@@ -1,3 +1,55 @@
+# NEXT_STEPS
+
+## Summary of Recent Changes
+- Backend API
+  - Added `Ticket` and `CheckinAudit` models to persist ticket state and audit validations.
+  - Implemented `POST /api/checkins/validate` with JWT auth to verify on-chain owner, mark tickets used, and log audits.
+  - Added KPIs endpoint `GET /api/stats/kpis` returning counts and revenue.
+  - Enforced RBAC middleware: `authenticate` and `authorize(['admin','organizer'])` on `/api/nft/admin/*` routes.
+  - Auth login returns `{ token, role }`; added `GET /api/auth/me` for token validation and user info.
+- Admin Web Portal
+  - React Query hooks for events: `useEvents`, `useCreateEvent`, `useUpdateEvent`, `useDeleteEvent`.
+  - Client-side filters on events list (text + status).
+  - Dashboard pulls KPIs from `/api/stats/kpis` and shows an initial Recharts line chart.
+  - `AuthProvider` hydrates token/role via `/api/auth/me`; `RequireRole` protects routes.
+  - Axios interceptor with gentle toasts for 4xx/5xx; auto-redirect to `/login` on `401/403`.
+  - Logout button with success toast.
+   - Audits: `/api/stats/audits` with filters and `/api/stats/audits/export` server-side CSV; portal `AuditsPage` with filters/pagination and CSV export.
+
+## Pending / TODO
+- Completed: Events backend CRUD alignment and hooks connected ✅
+- Completed: Role management UI with RBAC, validation y auditoría ✅
+- Dashboard charts: expand with timeseries (daily check-ins, revenue trend) and localized axes formatting.
+- Auditorías: UI para `RoleChangeAudit` con filtros avanzados y paginación.
+   - CSV server-side ya implementado; añadir virtualización en listas grandes y control por roles.
+- Secrets y entorno: configurar en CI/CD (`VITE_API_URL`, `CODECOV_TOKEN`, claves blockchain) y documentar `.env` locales.
+- Tests: añadir integración para `AuthProvider`, `RequireRole`, e interceptor (401/403/4xx) y mantener cobertura ≥ 90%.
+
+## Weekly Checklist
+- [x] Backend: finalize `/admin/events` CRUD and connect to hooks.
+- [x] Frontend: add KPI cards (minted, owner lookups, check-ins success) and detailed chart.
+- [x] Check-in: add UI for audit list with filters/date range.
+- [x] RBAC: verify route access with mixed roles and add 403 view.
+- [x] CI: ensure coverage stays >= 90%; update tests for new guards and toasts.
+
+### New Priorities (Week of 30/11/2025)
+- [ ] CI/CD: configurar secrets (`VITE_API_URL`, `CODECOV_TOKEN`, claves blockchain) en GitHub Actions.
+- [ ] Testing: añadir tests de integración para `AuthProvider`, `RequireRole` y el interceptor Axios (401/403/4xx).
+- [ ] Dashboard: conectar gráfico a `/api/stats/checkins/daily` y ampliar KPIs.
+- [ ] Auditorías: añadir UI para `RoleChangeAudit` con filtros avanzados (usuario, fecha, tipo de cambio).
+- [ ] Staging: desplegar backend y portal en entorno de staging y ejecutar smoke tests.
+
+#### How to Verify (Week of 30/11/2025)
+- CI/CD: comprobar secrets presentes en `Settings → Secrets and variables → Actions` y re-ejecutar workflow (`.github/workflows/ci.yml`).
+- Tests: ejecutar suite y verificar cobertura ≥ 90%.
+  
+   ```bash
+   # Backend/Frontend (según proyecto)
+   npm test -- --coverage
+   ```
+- Dashboard: validar gráfico con datos de `/api/stats/checkins/daily` y formatos localizados.
+- Auditorías: revisar nueva vista de `RoleChangeAudit`, probar filtros y export CSV.
+- Staging: abrir URL de staging (`https://staging.nft-platform.example.com`), realizar login, flujo de eventos CRUD y check-ins; revisar logs y métricas.
 # NFT Ticketing Marketplace - Next Steps & Roadmap
 
 ## 🎯 Current Status
@@ -180,6 +232,21 @@ npx tailwindcss init -p
 # - Build optimization
 ```
 
+**Progress & Pending (MVP updates)**
+- Done:
+   - Base app (Vite + TS + Tailwind), routing y layout.
+   - Selector de idioma (ES/EN) con i18n ligero y `react-datepicker` localizado.
+   - Formulario de eventos con validación básica y datepicker avanzado.
+   - Web3 admin: formulario para mintear NFT y consulta de propietario.
+   - Página de Check-ins con validación de entrada (owner on-chain + expected owner opcional).
+   - Tests de i18n y formatters (Vitest + Testing Library); subida de cobertura con Codecov.
+- Next:
+   - Events CRUD hooks: `useEvents`, `useCreateEvent`, `useUpdateEvent`, `useDeleteEvent` totalmente conectados.
+   - Events UI: filtros y feedback de éxito/error; paginación si aplica.
+   - Dashboard KPIs: tarjetas y gráfico básico (Recharts), localización de formatos.
+   - Ajustar persistencia de estado del ticket a modelo real (reemplazar placeholder `Transaction`).
+   - Añadir protección de rutas con estado de auth real y roles.
+
 ---
 
 ## ⛓️ Phase 3: Blockchain Integration
@@ -229,6 +296,15 @@ npx tailwindcss init -p
 - validateTicketOwnership(userAddress, tokenId)
 - recordCheckInOnBlockchain(tokenId, eventId)
 ```
+
+**Progress & Pending (Web3 layer)**
+- Done:
+   - Backend `nft-marketplace-backend-api`: métodos Web3 (`mintNFT`, `getTicketOwner`, `verifyMintTransaction`, `transferTicket`).
+   - Endpoints admin: `POST /api/nft/admin/mint`, `GET /api/nft/admin/owner/:tokenId` (roles admin/organizer).
+   - Check-ins: `POST /api/checkins/validate` integrando owner on-chain y marcado `used` (placeholder).
+- Next:
+   - Conectar marcado `used` al modelo `tickets` real y auditoría de check-in.
+   - Añadir escaneo QR en Admin Portal para capturar `tokenId` y registro de eventos.
 
 ### 3.3 Frontend Web3 Integration
 
@@ -499,3 +575,15 @@ Production branch → Blue-Green deployment → Health checks → Traffic migrat
 
 **Status**: Ready for Phase 2! 🚀
 **Questions**: Review individual service README files or check CI/CD workflows
+
+---
+
+## ✅ Weekly Checklist (MVP follow-up)
+
+- [ ] Admin Portal: completar hooks CRUD de eventos (list/create/update/delete)
+- [ ] Admin Portal: filtros en listado de eventos y feedback de errores
+- [ ] Admin Portal: KPIs y gráfico básico con Recharts (formato localizado)
+- [ ] Web3: conectar marcado `used` al modelo `tickets` real y auditoría de check-in
+- [ ] Web3: verificar owner on-chain en flujos relevantes (check-in y soporte)
+- [ ] CI: asegurar secrets (`VITE_*`, `CODECOV_TOKEN`) y cobertura ≥ 90%
+- [ ] Auth/RBAC: proteger rutas del portal con roles (admin/organizer)
